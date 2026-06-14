@@ -66,9 +66,9 @@ check_network() {
 
 install_packages() {
     echo_info 'Updating apt...'
-    apt update -qq >/dev/null
+    apt update -qq &>/dev/null
     echo_info 'Installing packages...'
-    apt install curl jq nginx podman ufw unzip -qq >/dev/null
+    apt install curl jq nginx podman ufw unzip -qq &>/dev/null
     echo_info 'curl jq nginx podman ufw unzip installed.'
 
     [[ -x /usr/local/bin/xray ]] || {
