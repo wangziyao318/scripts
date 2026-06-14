@@ -7,21 +7,30 @@ shopt -s nullglob
 # Global variables
 ##
 
-declare IPv4 IPv6 UUID XHTTP_PATH
-declare -l RECORD="$(hostname -s)"
+declare -l IPv4 IPv6 RECORD UUID XHTTP_PATH
+RECORD="$(hostname -s)"
+[[ "${RECORD}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] ||
+    { echo_error "Invalid hostname: ${RECORD}."; exit 1; }
 
 ##
 # Helper functions
 ##
 
-echo_error() { echo -e "\033[0;31m[ERROR] ${1}\033[0m" >&2; }
-echo_warn() { echo -e "\033[0;33m[WARN] ${1}\033[0m" >&2; }
-echo_info() { echo -e "\033[0;32m[INFO] ${1}\033[0m"; }
-echo_data() { echo -e "\033[0;34m${1}\033[0m"; }
+echo_error() { printf '\033[0;31m[ERROR] %s\033[0m\n' "${1}" >&2; }
+echo_warn() { printf '\033[0;33m[WARN] %s\033[0m\n' "${1}" >&2; }
+echo_info() { printf '\033[0;32m[INFO] %s\033[0m\n' "${1}"; }
+echo_data() { printf '\033[0;34m%s\033[0m\n' "${1}"; }
 
 ##
 # Check functions
 ##
+
+check_env() {
+    local var
+    for var in EMAIL DOMAIN CF_Token CF_Zone_ID SSH_PUBLIC_KEY; do
+        [[ -n "${!var}" ]] || { echo_error "${var} not set."; return 1; }
+    done
+}
 
 check_root() {
     (( EUID == 0 )) || { echo_error 'Please run as root.'; return 1; }
@@ -29,27 +38,26 @@ check_root() {
 
 check_os() {
     local -r supported_os='debian ubuntu'
-    source /etc/os-release || { echo_error '/etc/os-release not found.'; return 1; }
-    [[ " ${supported_os} " == *" ${ID} "* ]] ||
-        { echo_error "Unsupported os: ${ID}."; return 1; }
+    local os
+    os=$(. /etc/os-release && printf '%s' "${ID}") ||
+        { echo_error '/etc/os-release not found.'; return 1; }
+    [[ " ${supported_os} " == *" ${os} "* ]] || { echo_error "Unsupported os: ${os}."; return 1; }
 }
 
 check_network() {
     local cmd
-    command -v curl &>/dev/null && cmd='curl -fs -m 5' || {
-        command -v wget &>/dev/null && cmd='wget -qO- -T 5' || {
+    command -v curl >/dev/null && cmd='curl -fsS -m 5' || {
+        command -v wget >/dev/null && cmd='wget -nv -O- --max-redirect=0 -T 5 -t 1' || {
             echo_error 'Neither curl nor wget installed.'
             return 1
         }
     }
 
-    IPv4=$(${cmd} 'https://1.1.1.1/cdn-cgi/trace' 2>/dev/null |
-        sed -n 's/^ip=//p')
+    IPv4=$(${cmd} 'https://1.1.1.1/cdn-cgi/trace' | sed -n 's/^ip=//p')
     [[ -n "${IPv4}" ]] || { echo_error 'Failed to detect public IPv4.'; return 1; }
-    IPv6=$(${cmd} 'https://[2606:4700:4700::1111]/cdn-cgi/trace' 2>/dev/null |
-        sed -n 's/^ip=//p')
+    IPv6=$(${cmd} 'https://[2606:4700:4700::1111]/cdn-cgi/trace' | sed -n 's/^ip=//p')
     [[ -n "${IPv6}" ]] || { echo_error 'Failed to detect public IPv6.'; return 1; }
-    echo_info "Public IPv4 ${IPv4} IPv6 ${IPv6}."
+    echo_info "Public IPv4 ${IPv4} and IPv6 ${IPv6}."
 }
 
 ##
@@ -57,22 +65,20 @@ check_network() {
 ##
 
 install_packages() {
-    command -v nginx &>/dev/null && command -v podman &>/dev/null || {
-        echo_info 'Updating apt...'
-        apt update -qq &>/dev/null
-        apt install curl jq nginx podman ufw unzip -y -qq &>/dev/null
-        echo_info 'curl jq nginx podman ufw unzip installed.'
-    }
+    echo_info 'Updating apt...'
+    apt update -qq >/dev/null
+    echo_info 'Installing packages...'
+    apt install curl jq nginx podman ufw unzip -qq >/dev/null
+    echo_info 'curl jq nginx podman ufw unzip installed.'
 
     [[ -x /usr/local/bin/xray ]] || {
         curl -fsSL 'https://github.com/XTLS/Xray-install/raw/main/install-release.sh' |
-            bash -s install -u root &>/dev/null
+            bash -s install -u root >/dev/null
         echo_info 'xray installed.'
     }
 
     [[ -x /root/.acme.sh/acme.sh ]] || {
-        [[ -n "${EMAIL}" ]] || { echo_error 'EMAIL not set.'; return 1; }
-        curl -fsSL 'https://get.acme.sh' | sh -s email=${EMAIL} >/dev/null 2>&1
+        curl -fsSL 'https://get.acme.sh' | sh -s email="${EMAIL}" >/dev/null
         echo_info 'acme.sh installed.'
     }
 }
@@ -83,69 +89,58 @@ install_packages() {
 
 config_swap() {
     swapon --show --noheadings | grep -q . || {
-        [[ -f /swapfile ]] && rm -f /swapfile
-        fallocate -l 1G /swapfile 2>/dev/null ||
-            dd if=/dev/zero of=/swapfile bs=1M count=1024 status=none
+        rm -f /swapfile
+        fallocate -l 1G /swapfile || { echo_error 'Failed to fallocate swap.'; return 1; }
         chmod 600 /swapfile
-        mkswap /swapfile &>/dev/null
-        swapon /swapfile &>/dev/null
-        grep -qF '/swapfile' /etc/fstab ||
-            printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
+        mkswap /swapfile >/dev/null
+        swapon /swapfile >/dev/null
+        grep -qF '/swapfile' /etc/fstab || printf '%s\n' '/swapfile none swap sw 0 0' >>/etc/fstab
         echo_info 'swap configured.'
     }
 }
 
 config_bbr() {
-    { sysctl net.ipv4.tcp_congestion_control | grep -q bbr; } || {
+    sysctl net.ipv4.tcp_congestion_control | grep -qF 'bbr' || {
         {
             printf '%s\n' 'net.ipv4.tcp_congestion_control=bbr'
             printf '%s\n' 'net.core.default_qdisc=fq'
-        } >> /etc/sysctl.conf
-        sysctl -p &>/dev/null
+        } >>/etc/sysctl.conf
+        sysctl -p >/dev/null
         echo_info 'bbr configured.'
     }
 }
 
 config_ssh() {
-    [[ -f /root/.ssh/authorized_keys ]] || {
-        [[ -n "${SSH_PUBLIC_KEY}" ]] ||
-            { echo_error 'SSH_PUBLIC_KEY not set.'; return 1; }
-        install -d -m 700 /root/.ssh
-        install -m 600 - /root/.ssh/authorized_keys <<< "${SSH_PUBLIC_KEY}"
+    grep -qF "${SSH_PUBLIC_KEY}" /root/.ssh/authorized_keys 2>/dev/null || {
+        install -D -m 600 - /root/.ssh/authorized_keys <<<"${SSH_PUBLIC_KEY}"
     }
-    rm -rf /etc/ssh/sshd_config.d
     sed -i \
-        -e '/^#*Include/d' \
-        -e 's/^#*Port.*/Port 39000/' \
+        -e '|^#*Include|d' \
+        -e 's|^#*Port.*|Port 39000|' \
         -e 's|^#*AuthorizedKeysFile.*|AuthorizedKeysFile .ssh/authorized_keys|' \
-        -e 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' \
-        -e 's/^#*X11Forwarding.*/X11Forwarding no/' \
+        -e 's|^#*PasswordAuthentication.*|PasswordAuthentication no|' \
+        -e 's|^#*X11Forwarding.*|X11Forwarding no|' \
         /etc/ssh/sshd_config
     echo_info 'ssh configured to use port 39000 without password authentication.'
 }
 
 config_ufw() {
-    ufw disable &>/dev/null
-    echo y | ufw reset &>/dev/null
-    ufw allow 443 &>/dev/null
-    ufw allow 39000/tcp &>/dev/null
-    ufw default allow routed &>/dev/null
+    ufw disable >/dev/null
+    printf 'y\n' | ufw reset >/dev/null
+    ufw allow 443 >/dev/null
+    ufw allow 39000/tcp >/dev/null
+    ufw default allow routed >/dev/null
     echo_info 'ufw disabled.'
 }
 
 config_hostname() {
-    [[ -n "${DOMAIN}" ]] || { echo_error 'DOMAIN not set.'; return 1; }
     local cf_url="https://api.cloudflare.com/client/v4/zones/${CF_Zone_ID}/dns_records"
-    [[ "${RECORD}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] ||
-        { echo_error "Invalid hostname: ${RECORD}."; return 1; }
-
-    local record_id=$(curl -fsSL "${cf_url}?type=A&name=${RECORD}.${DOMAIN}" \
+    local record_id http_method='POST' json_data
+    record_id=$(curl -fsSL "${cf_url}?type=A&name=${RECORD}.${DOMAIN}" \
         -H "Authorization: Bearer ${CF_Token}" \
         -H 'Content-Type: application/json' | jq -r '.result[0].id // empty')
-    local http_method='POST'
-    [[ -n "${record_id}" ]] && { cf_url+="/${record_id}"; http_method='PUT'; }
-
-    local json_data=$(jq -n \
+    [[ -z "${record_id}" ]] || { cf_url+="/${record_id}"; http_method='PUT'; }
+    json_data=$(jq -n \
         --arg name "${RECORD}.${DOMAIN}" \
         --arg content "${IPv4}" \
         '{type: "A", name: $name, content: $content, ttl: 3600, proxied: false}')
@@ -158,12 +153,11 @@ config_hostname() {
 }
 
 config_searxng() {
-    command -v podman &>/dev/null || { echo_error 'podman not installed.'; return 1; }
-    podman pull -q docker.io/searxng/searxng:latest
-    podman pull -q docker.io/isokoliuk/mcp-searxng:latest
-    mkdir -p /etc/searxng
-    mkdir -p /etc/containers/systemd
-    cat > /etc/searxng/settings.yml <<EOF
+    command -v podman >/dev/null || { echo_error 'podman not installed.'; return 1; }
+    podman pull -q docker.io/searxng/searxng:latest >/dev/null
+    podman pull -q docker.io/isokoliuk/mcp-searxng:latest >/dev/null
+    mkdir -p /etc/searxng /etc/containers/systemd
+    cat >/etc/searxng/settings.yml <<EOF
 use_default_settings:
     engines:
         keep_only:
@@ -178,8 +172,8 @@ search:
         - html
         - json
 EOF
-    : > /etc/searxng/limiter.toml
-    cat > /etc/containers/systemd/searxng.pod <<EOF
+    : >/etc/searxng/limiter.toml
+    cat >/etc/containers/systemd/searxng.pod <<EOF
 [Unit]
 Description=SearXNG Pod
 
@@ -190,7 +184,7 @@ PublishPort=127.0.0.1:3000:3000
 [Install]
 WantedBy=multi-user.target
 EOF
-    cat > /etc/containers/systemd/searxng.container <<EOF
+    cat >/etc/containers/systemd/searxng.container <<EOF
 [Unit]
 Description=SearXNG Server
 Documentation=https://docs.searxng.org/
@@ -201,13 +195,12 @@ ContainerName=searxng
 Pod=searxng.pod
 Volume=/etc/searxng:/etc/searxng
 Environment=SEARXNG_SECRET=$(openssl rand -hex 32)
-Environment=SEARXNG_BASE_URL=http://127.0.0.1:8080/
 Environment=GRANIAN_BLOCKING_THREADS=2
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    cat > /etc/containers/systemd/mcp-searxng.container <<EOF
+    cat >/etc/containers/systemd/mcp-searxng.container <<EOF
 [Unit]
 Description=SearXNG MCP Server
 Documentation=https://github.com/ihor-sokoliuk/MCP-searxng/
@@ -231,7 +224,7 @@ config_xray() {
     [[ -x /usr/local/bin/xray ]] || { echo_error 'xray not installed.'; return 1; }
     UUID="$(/usr/local/bin/xray uuid)"
     XHTTP_PATH="$(openssl rand -hex 32)"
-    cat > /usr/local/etc/xray/config.json <<EOF
+    cat >/usr/local/etc/xray/config.json <<EOF
 {
     "version": {
         "min": "25.8.3"
@@ -289,10 +282,8 @@ EOF
 }
 
 config_nginx() {
-    command -v nginx &>/dev/null || { echo_error 'nginx not installed.'; return 1; }
-    [[ -n "${RECORD}" ]] || { echo_error 'DNS record not found.'; return 1; }
-    [[ -n "${DOMAIN}" ]] || { echo_error 'DOMAIN not set.'; return 1; }
-    cat > /etc/nginx/sites-enabled/default <<EOF
+    command -v nginx >/dev/null || { echo_error 'nginx not installed.'; return 1; }
+    cat >/etc/nginx/sites-enabled/default <<EOF
 server {
     listen 443 ssl default_server;
     listen [::]:443 ssl default_server;
@@ -360,15 +351,14 @@ EOF
 
 config_acme() {
     [[ -x /root/.acme.sh/acme.sh ]] || { echo_error 'acme.sh not installed.'; return 1; }
-    [[ -n "${RECORD}" ]] || { echo_error 'DNS record not found.'; return 1; }
-    [[ -n "${DOMAIN}" ]] || { echo_error 'DOMAIN not set.'; return 1; }
     mkdir -p /etc/nginx/ssl
     echo_info "Issuing ${RECORD}.${DOMAIN} certificates..."
-    /root/.acme.sh/acme.sh --list | grep -q "${RECORD}.${DOMAIN}" ||
-        /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${RECORD}.${DOMAIN}" &>/dev/null
+    /root/.acme.sh/acme.sh --list | grep -qF "${RECORD}.${DOMAIN}" ||
+        /root/.acme.sh/acme.sh --issue --dns dns_cf -d "${RECORD}.${DOMAIN}" >/dev/null
     /root/.acme.sh/acme.sh --install-cert -d "${RECORD}.${DOMAIN}" \
-        --key-file /etc/nginx/ssl/key.pem --fullchain-file /etc/nginx/ssl/fullchain.pem \
-        --reloadcmd 'systemctl reload nginx' &>/dev/null
+        --key-file /etc/nginx/ssl/key.pem \
+        --fullchain-file /etc/nginx/ssl/fullchain.pem \
+        --reloadcmd 'systemctl reload nginx' >/dev/null
     echo_info "acme.sh configured to renew ${RECORD}.${DOMAIN} certificates."
 }
 
@@ -378,17 +368,18 @@ config_acme() {
 
 print_info() {
     echo_info 'VPS Information'
-    echo_data "ssh -p 39000 ${RECORD}.${DOMAIN}"
+    # https://www.man7.org/linux/man-pages/man1/ssh.1.html
+    echo_data "ssh -p 39000 root@${IPv4}"
+    echo_data "ssh -p 39000 root@${IPv6}"
+    # https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http
     echo_data "https://${RECORD}.${DOMAIN}/mcp-searxng/mcp"
-    # See https://github.com/XTLS/Xray-core/discussions/716
-    echo_data "vless://${UUID}@[${IPv6}]:443?type=xhttp&security=tls\
-        &path=%2F${XHTTP_PATH}&mode=stream-up&extra=%7B%22downloadSettings\
-        %22%3A%7B%22address%22%3A%22${IPv6}%22%2C%22port%22%3A443%2C%22network\
-        %22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C%22tlsSettings%22%3A%7B%22\
-        serverName%22%3A%22${RECORD}.${DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%7D%2C%22\
-        xhttpSettings%22%3A%7B%22path%22%3A%22%2F${XHTTP_PATH}%22%2C%22mode%22%3A%22\
-        stream-up%22%7D%2C%22sockopt%22%3A%7B%22tcpFastOpen%22%3Atrue%7D%7D%7D\
-        &sni=${RECORD}.${DOMAIN}&alpn=h3&tfo=1#${RECORD^^}"
+    # https://github.com/XTLS/Xray-core/discussions/716
+    echo_data "vless://${UUID}@[${IPv6}]:443?type=xhttp&security=tls&path=%2F${XHTTP_PATH}\
+&mode=stream-up&extra=%7B%22downloadSettings%22%3A%7B%22address%22%3A%22${IPv6}%22%2C%22port\
+%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C%22tlsSettings%22%3A%7B%22\
+serverName%22%3A%22${RECORD}.${DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%7D%2C%22xhttpSettings\
+%22%3A%7B%22path%22%3A%22%2F${XHTTP_PATH}%22%2C%22mode%22%3A%22stream-up%22%7D%2C%22sockopt\
+%22%3A%7B%22tcpFastOpen%22%3Atrue%7D%7D%7D&sni=${RECORD}.${DOMAIN}&alpn=h3&tfo=1#${RECORD^^}"
 }
 
 restart_os() {
@@ -396,6 +387,7 @@ restart_os() {
     reboot
 }
 
+check_env
 check_root
 check_os
 check_network
