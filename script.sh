@@ -164,9 +164,6 @@ use_default_settings:
             - brave
             - duckduckgo
             - google
-            - startpage
-            - wikidata
-            - wikipedia
 search:
     formats:
         - html
