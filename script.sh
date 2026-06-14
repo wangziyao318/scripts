@@ -73,12 +73,12 @@ install_packages() {
 
     [[ -x /usr/local/bin/xray ]] || {
         curl -fsSL 'https://github.com/XTLS/Xray-install/raw/main/install-release.sh' |
-            bash -s install -u root >/dev/null
+            bash -s install -u root &>/dev/null
         echo_info 'xray installed.'
     }
 
     [[ -x /root/.acme.sh/acme.sh ]] || {
-        curl -fsSL 'https://get.acme.sh' | sh -s email="${EMAIL}" >/dev/null
+        curl -fsSL 'https://get.acme.sh' | sh -s email="${EMAIL}" &>/dev/null
         echo_info 'acme.sh installed.'
     }
 }
@@ -115,7 +115,7 @@ config_ssh() {
         install -D -m 600 - /root/.ssh/authorized_keys <<<"${SSH_PUBLIC_KEY}"
     }
     sed -i \
-        -e '|^#*Include|d' \
+        -e '/^#*Include/d' \
         -e 's|^#*Port.*|Port 39000|' \
         -e 's|^#*AuthorizedKeysFile.*|AuthorizedKeysFile .ssh/authorized_keys|' \
         -e 's|^#*PasswordAuthentication.*|PasswordAuthentication no|' \
