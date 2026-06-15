@@ -7,7 +7,7 @@ shopt -s nullglob
 # Global variables
 ##
 
-declare -l IPv4 IPv6 RECORD UUID XHTTP_PATH
+declare -l IPv4 IPv6 RECORD UUID TOKEN XHTTP_PATH
 RECORD="$(hostname -s)"
 [[ "${RECORD}" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] ||
     { echo_error "Invalid hostname: ${RECORD}."; exit 1; }
@@ -280,6 +280,7 @@ EOF
 
 config_nginx() {
     command -v nginx >/dev/null || { echo_error 'nginx not installed.'; return 1; }
+    TOKEN="sk-$(openssl rand -hex 32)"
     cat >/etc/nginx/sites-enabled/default <<EOF
 server {
     listen 443 ssl default_server;
@@ -297,8 +298,7 @@ server {
     listen [::]:443 quic reuseport;
     server_name ${RECORD}.${DOMAIN};
 
-    client_header_timeout 5m;
-    keepalive_timeout 5m;
+    access_log off;
 
     http2 on;
     ssl_certificate /etc/nginx/ssl/fullchain.pem;
@@ -309,12 +309,15 @@ server {
     ssl_session_tickets off;
 
     location = / {
-        access_log off;
         default_type application/json;
-        return 200 '{"status":"ok"}';
+        return 200 '{"status":"ok","code":200}';
     }
 
     location /mcp-searxng/ {
+        if (\$http_authorization != "Bearer ${TOKEN}") {
+            return 401 '{"error":"unauthorized","code":401}';
+        }
+
         proxy_pass http://127.0.0.1:3000/;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -328,11 +331,9 @@ server {
         grpc_read_timeout 5m;
         grpc_send_timeout 5m;
         client_max_body_size 0;
-        client_body_timeout 5m;
     }
 
     location /api/ {
-        access_log off;
         default_type application/json;
         return 401 '{"error":"unauthorized","code":401}';
     }
@@ -369,10 +370,10 @@ print_info() {
     echo_data "ssh -p 39000 root@${IPv4}"
     echo_data "ssh -p 39000 root@${IPv6}"
     # https://modelcontextprotocol.io/specification/2025-03-26/basic/transports#streamable-http
-    echo_data "https://${RECORD}.${DOMAIN}/mcp-searxng/mcp"
+    echo_data "https://${RECORD}.${DOMAIN}/mcp-searxng/mcp -H \"Authorization: Bearer ${TOKEN}\""
     # https://github.com/XTLS/Xray-core/discussions/716
     echo_data "vless://${UUID}@[${IPv6}]:443?type=xhttp&security=tls&path=%2F${XHTTP_PATH}\
-&mode=stream-up&extra=%7B%22downloadSettings%22%3A%7B%22address%22%3A%22${IPv6}%22%2C%22port\
+&mode=packet-up&extra=%7B%22downloadSettings%22%3A%7B%22address%22%3A%22${IPv6}%22%2C%22port\
 %22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C%22tlsSettings%22%3A%7B%22\
 serverName%22%3A%22${RECORD}.${DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%7D%2C%22xhttpSettings\
 %22%3A%7B%22path%22%3A%22%2F${XHTTP_PATH}%22%2C%22mode%22%3A%22stream-up%22%7D%2C%22sockopt\
