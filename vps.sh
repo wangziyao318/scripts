@@ -130,7 +130,7 @@ config_ufw() {
     ufw allow 443 >/dev/null
     ufw allow 39000/tcp >/dev/null
     ufw default allow routed >/dev/null
-    echo_info 'ufw disabled.'
+    echo_info 'ufw configured and disabled.'
 }
 
 config_hostname() {
@@ -214,7 +214,7 @@ Environment=MCP_HTTP_PORT=3000
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    echo_info 'searxng configured.'
+    echo_info 'mcp-searxng configured.'
 }
 
 config_xray() {
