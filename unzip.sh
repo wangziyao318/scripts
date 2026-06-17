@@ -3,6 +3,7 @@
 set -euo pipefail
 shopt -s nullglob
 
+command -v parallel >/dev/null || { echo 'parallel not installed.' >&2; exit 1; }
 command -v 7z >/dev/null || { echo '7z not installed.' >&2; exit 1; }
 
 parallel '
