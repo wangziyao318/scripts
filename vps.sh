@@ -46,17 +46,18 @@ check_os() {
 
 check_network() {
     local cmd
-    command -v curl >/dev/null && cmd='curl -fsS -m 5' || {
-        command -v wget >/dev/null && cmd='wget -nv -O- --max-redirect=0 -T 5 -t 1' || {
+    command -v curl >/dev/null && cmd='curl -fs -m 5' || {
+        command -v wget >/dev/null && cmd='wget -qO- --max-redirect=0 -T 5 -t 1' || {
             echo_error 'Neither curl nor wget installed.'
             return 1
         }
     }
 
-    IPv4=$(${cmd} 'https://1.1.1.1/cdn-cgi/trace' | sed -n 's/^ip=//p')
-    [[ -n "${IPv4}" ]] || { echo_error 'Failed to detect public IPv4.'; return 1; }
-    IPv6=$(${cmd} 'https://[2606:4700:4700::1111]/cdn-cgi/trace' | sed -n 's/^ip=//p')
-    [[ -n "${IPv6}" ]] || { echo_error 'Failed to detect public IPv6.'; return 1; }
+    IPv4=$(${cmd} 'https://1.1.1.1/cdn-cgi/trace' | sed -n 's/^ip=//p') && [[ -n "${IPv4}" ]] ||
+        { echo_error 'Failed to detect public IPv4.'; return 1; }
+    IPv6=$(${cmd} 'https://[2606:4700:4700::1111]/cdn-cgi/trace' | sed -n 's/^ip=//p') &&
+        [[ -n "${IPv6}" ]] ||
+        { echo_error 'Failed to detect public IPv6.'; return 1; }
     echo_info "Public IPv4 ${IPv4} and IPv6 ${IPv6}."
 }
 
