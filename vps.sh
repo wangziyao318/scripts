@@ -134,6 +134,7 @@ config_ufw() {
     ufw allow 22/tcp >/dev/null
     ufw allow 443 >/dev/null
     ufw allow 39000/tcp >/dev/null
+    ufw default allow routed >/dev/null
     ufw --force enable >/dev/null
     echo_info 'ufw configured and enabled.'
 }
