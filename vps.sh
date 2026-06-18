@@ -139,22 +139,32 @@ config_ufw() {
 }
 
 config_hostname() {
-    local cf_url="https://api.cloudflare.com/client/v4/zones/${CF_Zone_ID}/dns_records"
-    local record_id http_method='POST' json_data
-    record_id=$(curl -fsSL "${cf_url}?type=A&name=${RECORD}.${DOMAIN}" \
-        -H "Authorization: Bearer ${CF_Token}" \
-        -H 'Content-Type: application/json' | jq -r '.result[0].id // empty')
-    [[ -z "${record_id}" ]] || { cf_url+="/${record_id}"; http_method='PUT'; }
-    json_data=$(jq -n \
-        --arg name "${RECORD}.${DOMAIN}" \
-        --arg content "${IPv4}" \
-        '{type: "A", name: $name, content: $content, ttl: 3600, proxied: false}')
+    local base_url="https://api.cloudflare.com/client/v4/zones/${CF_Zone_ID}/dns_records"
+    local record_type record_id cf_url http_method json_data
+    local -A type_ips=([A]="${IPv4}" [AAAA]="${IPv6}")
 
-    curl -fsSL -o /dev/null -X "${http_method}" "${cf_url}" \
-        -H "Authorization: Bearer ${CF_Token}" \
-        -H 'Content-Type: application/json' \
-        -d "${json_data}"
-    echo_info "Hostname synced to Cloudflare DNS A record ${RECORD}.${DOMAIN}."
+    for record_type in "${!type_ips[@]}"; do
+        record_id=$(curl -fsSL "${base_url}?type=${record_type}&name=${RECORD}.${DOMAIN}" \
+            -H "Authorization: Bearer ${CF_Token}" \
+            -H 'Content-Type: application/json' | jq -r '.result[0].id // empty')
+
+        cf_url="${base_url}"
+        http_method='POST'
+        [[ -z "${record_id}" ]] || { cf_url+="/${record_id}"; http_method='PUT'; }
+
+        json_data=$(jq -n \
+            --arg type "${record_type}" \
+            --arg name "${RECORD}.${DOMAIN}" \
+            --arg content "${type_ips[${record_type}]}" \
+            '{type: $type, name: $name, content: $content, ttl: 3600, proxied: false}')
+
+        curl -fsSL -o /dev/null -X "${http_method}" "${cf_url}" \
+            -H "Authorization: Bearer ${CF_Token}" \
+            -H 'Content-Type: application/json' \
+            -d "${json_data}" ||
+            { echo_error "DNS record ${record_type} update failed."; return 1; }
+
+    echo_info "DNS record ${RECORD}.${DOMAIN}: A=${IPv4}, AAAA=${IPv6}."
 }
 
 config_searxng() {
