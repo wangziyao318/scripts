@@ -163,7 +163,7 @@ config_hostname() {
             -H 'Content-Type: application/json' \
             -d "${json_data}" ||
             { echo_error "DNS record ${record_type} update failed."; return 1; }
-
+    done
     echo_info "DNS record ${RECORD}.${DOMAIN}: A=${IPv4}, AAAA=${IPv6}."
 }
 
