@@ -66,9 +66,13 @@ check_network() {
 
 install_packages() {
     echo_info 'Updating apt...'
-    apt update -qq &>/dev/null
+    apt-get update -qq
+    echo_info 'Upgrading apt...'
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -qq -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" >/dev/null
     echo_info 'Installing packages...'
-    apt install curl jq nginx podman ufw unzip -qq &>/dev/null
+    DEBIAN_FRONTEND=noninteractive apt-get install curl jq nginx podman ufw unzip -qq -y >/dev/null
     echo_info 'curl jq nginx podman ufw unzip installed.'
 
     [[ -x /usr/local/bin/xray ]] || {
@@ -125,12 +129,13 @@ config_ssh() {
 }
 
 config_ufw() {
-    ufw disable >/dev/null
-    printf 'y\n' | ufw reset >/dev/null
+    ufw --force reset >/dev/null
+    rm -f /etc/ufw/*.rules.*[0-9]
+    ufw allow 22/tcp >/dev/null
     ufw allow 443 >/dev/null
     ufw allow 39000/tcp >/dev/null
-    ufw default allow routed >/dev/null
-    echo_info 'ufw configured and disabled.'
+    ufw --force enable >/dev/null
+    echo_info 'ufw configured and enabled.'
 }
 
 config_hostname() {
@@ -381,7 +386,7 @@ serverName%22%3A%22${RECORD}.${DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%7D%2C%22
 }
 
 restart_os() {
-    echo_warn 'Reboot now. Please enable ufw and run apt upgrade after reboot.'
+    echo_warn 'Reboot now.'
     reboot
 }
 

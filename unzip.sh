@@ -3,10 +3,11 @@
 set -euo pipefail
 shopt -s nullglob
 
-command -v parallel >/dev/null || { echo 'parallel not installed.' >&2; exit 1; }
-command -v 7z >/dev/null || { echo '7z not installed.' >&2; exit 1; }
+for cmd in parallel 7z; do
+    command -v "$cmd" >/dev/null || { echo "$cmd not installed." >&2; exit 1; }
+done
 
-parallel '
+parallel --bar '
     dir={.}
     if [ -d {.} ]; then
         i=1
