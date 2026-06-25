@@ -390,11 +390,7 @@ print_info() {
     echo_data "https://${RECORD}.${DOMAIN}/mcp-searxng/mcp -H \"Authorization: Bearer ${TOKEN}\""
     # https://github.com/XTLS/Xray-core/discussions/716
     echo_data "vless://${UUID}@[${IPv6}]:443?type=xhttp&security=tls&path=%2F${XHTTP_PATH}\
-&mode=packet-up&extra=%7B%22downloadSettings%22%3A%7B%22address%22%3A%22${IPv6}%22%2C%22port\
-%22%3A443%2C%22network%22%3A%22xhttp%22%2C%22security%22%3A%22tls%22%2C%22tlsSettings%22%3A%7B%22\
-serverName%22%3A%22${RECORD}.${DOMAIN}%22%2C%22alpn%22%3A%5B%22h2%22%5D%7D%2C%22xhttpSettings\
-%22%3A%7B%22path%22%3A%22%2F${XHTTP_PATH}%22%2C%22mode%22%3A%22stream-up%22%7D%2C%22sockopt\
-%22%3A%7B%22tcpFastOpen%22%3Atrue%7D%7D%7D&sni=${RECORD}.${DOMAIN}&alpn=h3&tfo=1#${RECORD^^}"
+&mode=packet-up&fp=edge&sni=${RECORD}.${DOMAIN}&alpn=h2&tfo=1#${RECORD^^}"
 }
 
 restart_os() {

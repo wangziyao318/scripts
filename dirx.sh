@@ -3,14 +3,21 @@
 set -euo pipefail
 shopt -s nullglob
 
-[ $# -eq 1 ] || { echo "Usage: $0 <command>" >&2; exit 1; }
+((${#})) || { echo "Usage: ${0} <command> [args...]" >&2; exit 1; }
+command -v "${1}" >/dev/null || { echo "Command ${1} not found." >&2; exit 1; }
 
-cmd="$1"
-command -v "$cmd" >/dev/null || { echo "$cmd not found." >&2; exit 1; }
+dirs=(*/)
+n=${#dirs[@]}
+((n)) || exit 0
 
-for dir in */; do
-    [ -d "$dir" ] || continue
+i=0
+for dir in "${dirs[@]}"; do
+    [ -d "${dir}" ] || continue
 
-    echo "Processing $dir"
-    (cd "$dir" && eval "$cmd")
+    ((++i))
+    width=$((${COLUMNS:-80} - 7))
+    bar=$(printf '%*s' $((i * width / n)) '')
+    printf '\r[%-*s] %3d%%' "${width}" "${bar// /#}" "$((i * 100 / n))"
+
+    (cd "${dir}" && eval "${@}")
 done

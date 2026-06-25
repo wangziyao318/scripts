@@ -19,13 +19,17 @@ export EMAIL= DOMAIN= CF_Token= CF_Zone_ID= SSH_PUBLIC_KEY= &&
 Run command in each sub-directory.
 
 ```bash
-dirx.sh <command>
+dirx.sh <command> [args...]
 ```
 
 ## unzip.sh
 
 Unzip all zips in parallel in the current directory.
 
-## jpg2jxl.sh
+## img2jxl.sh
 
-Convert all jpgs to jxl losslessly in parallel in the current directory.
+Convert all jpgs to jxl losslessly and all pngs to jxl in parallel in the current directory.
+
+## wav2flac.sh
+
+Convert all wavs to flac losslessly in parallel in the current directory.
