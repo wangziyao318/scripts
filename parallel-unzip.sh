@@ -3,7 +3,7 @@
 set -euo pipefail
 shopt -s nullglob
 
-for cmd in parallel 7z; do
+for cmd in parallel unzip; do
     command -v "${cmd}" >/dev/null || { echo "${cmd} not installed." >&2; exit 1; }
 done
 
@@ -16,5 +16,5 @@ parallel --unsafe '
         done
         dir+=_\(${i}\)
     fi
-    7z x -y "-o${dir}" {} >/dev/null && rm -f -- {}
+    unzip -qq -o {} -d "${dir}" && rm -f -- {}
 ' ::: *.zip

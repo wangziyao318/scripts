@@ -2,7 +2,7 @@
 
 Various scripts for personal use.
 
-## vps.sh
+## `vps.sh`
 
 VPS script to set up vless+tls+xhttp and mcp-searxng.
 
@@ -14,7 +14,7 @@ export EMAIL= DOMAIN= CF_Token= CF_Zone_ID= SSH_PUBLIC_KEY= &&
     wget -qO- https://raw.githubusercontent.com/wangziyao318/scripts/refs/heads/main/vps.sh | bash
 ```
 
-## dirx.sh
+## `dirx.sh`
 
 Run command in each sub-directory.
 
@@ -22,14 +22,14 @@ Run command in each sub-directory.
 dirx.sh <command> [args...]
 ```
 
-## unzip.sh
+## `imv-zip.sh`
 
-Unzip all zips in parallel in the current directory.
+Extend imv to read zip archive.
 
-## img2jxl.sh
+```bash
+imv-zip.sh <file.zip>
+```
 
-Convert all jpgs to jxl losslessly and all pngs to jxl in parallel in the current directory.
+## `parallel-*.sh`
 
-## wav2flac.sh
-
-Convert all wavs to flac losslessly in parallel in the current directory.
+Use GNU parallel to accelerate commands.

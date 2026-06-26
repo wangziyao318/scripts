@@ -3,8 +3,8 @@
 set -euo pipefail
 shopt -s nullglob
 
-((${#})) || { echo "Usage: ${0} <command> [args...]" >&2; exit 1; }
-command -v "${1}" >/dev/null || { echo "Command ${1} not found." >&2; exit 1; }
+((${#})) || { echo "Usage: $(basename "${0}") <command> [args...]" >&2; exit 1; }
+command -v "${1}" >/dev/null || { echo "Not a command: ${1}." >&2; exit 1; }
 
 dirs=(*/)
 n=${#dirs[@]}
@@ -21,3 +21,4 @@ for dir in "${dirs[@]}"; do
 
     (cd "${dir}" && eval "${@}")
 done
+echo
